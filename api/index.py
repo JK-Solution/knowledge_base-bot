@@ -6,9 +6,9 @@ import json
 import os
 import requests
 from telegram import Update
-from telegram.ext import Application, ContextTypes, MessageHandler, filters
+from telegram.ext import Application, ContextTypes, MessageHandler, filters, Dispatcher, UpdateFilter, CallbackContext
 
-BOT_TOKEN = os.environ.get("BOT_TOKEN", "8707663876:AAGxHF7iZNizM2eFBam4dNct10R2kRdJ7VA")
+BOT_TOKEN = os.getenv("BOT_TOKEN", "8707663876:AAGxHF7iZNizM2eFBam4dNct10R2kRdJ7VA")
 GIST_URL = "https://gist.githubusercontent.com/JK-Solution/419c641952ac616340dc5fc9fc69ed3b/raw/4baaf89b876df36abd5b68a26de7dbdab3cf49b6/gistfile1.txt"
 
 _concepts_cache = None
@@ -58,11 +58,15 @@ Tags: {', '.join(c['Tags'])}
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """处理消息"""
+    if not update.message or not update.message.text:
+        return
+    
     text = update.message.text.strip()
+    chat_id = update.message.chat.id
     
     data = fetch_concepts()
     if not data:
-        await update.message.reply_text("❌ 获取数据失败")
+        await context.bot.send_message(chat_id=chat_id, text="❌ 获取数据失败")
         return
 
     # 命令处理
@@ -71,30 +75,36 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         msg = f"📚 共 {len(concepts)} 个概念:\n\n"
         for c in concepts:
             msg += f"• {c['名称']}\n"
-        await update.message.reply_text(msg)
+        await context.bot.send_message(chat_id=chat_id, text=msg)
         return
 
     # 搜索
     results = search_concept(text, data)
     if not results:
-        await update.message.reply_text(f"未找到: {text}\n\n试试: PE/均线/趋势/止损/仓位\n发送 /all 查看全部")
+        await context.bot.send_message(chat_id=chat_id, text=f"未找到: {text}\n\n试试: PE/均线/趋势/止损/仓位\n发送 /all 查看全部")
         return
 
     for c in results[:3]:
-        await update.message.reply_text(format_concept(c))
+        await context.bot.send_message(chat_id=chat_id, text=format_concept(c))
 
 
-async def handler(event, context):
+def app(event, context):
     """Vercel 入口"""
     try:
-        update = Update.de_json(json.loads(event["body"]), Application.bot)
-        if not update.message:
+        body = json.loads(event.get("body", "{}"))
+        if not body.get("message"):
             return {"statusCode": 200}
         
+        update = Update.de_json(body, None)
+        
+        # 创建 application
         application = Application.builder().token(BOT_TOKEN).build()
         application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
         
-        await application.process_update(update)
+        # 处理更新
+        dispatcher = Dispatcher(application, [], workers=1)
+        dispatcher.process_update(update)
+        
         return {"statusCode": 200}
     except Exception as e:
         print(f"Error: {e}")
