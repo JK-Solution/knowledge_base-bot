@@ -52,11 +52,14 @@ def send(chat_id, text):
 
 def app(environ, start_response):
     try:
+        print("Request received")
         length = int(environ.get('CONTENT_LENGTH', 0))
         body = environ['wsgi.input'].read(length).decode('utf-8')
+        print(f"Body: {body[:200]}")
         data = json.loads(body)
         
         msg = data.get("message", {})
+        print(f"Message: {msg}")
         if not msg:
             start_response('200 OK', [('Content-Type', 'text/plain')])
             return [b'ok']
